@@ -1,0 +1,52 @@
+# k3s's stock eviction-hard (imagefs<5%,nodefs<5%) REPLACES kubelet's default
+# threshold set rather than extending it, so this node had no memory.available
+# signal at all: the eviction manager could never fire on memory pressure. With
+# 8G swap plus zram and failSwapOn=false, the box swaps until it stops
+# responding. That is the freeze this node is known for.
+#
+# Restore a memory floor, evict softly before hard, and hold back headroom for
+# the desktop session this machine also runs (~41G resident outside k8s).
+# Allocatable lands near 100G of the 124G installed.
+kubelet-arg:
+  - "max-pods=250"
+  - "eviction-hard=memory.available<4Gi,nodefs.available<20Gi,nodefs.inodesFree<5%,imagefs.available<20Gi"
+  # Image GC is a PERCENTAGE of the whole 964G filesystem, and the default 85%
+  # high-water mark sits at 819G -- a line this node crossed and could not get
+  # back under, because 131 distinct images are genuinely in use by pods here.
+  # So the kubelet ran GC every few minutes, failed, and evicted LIVE images
+  # instead: the cloud re-pulled 2GB from ghcr on every restart and took fifteen
+  # minutes to come back, and a pre-pulled sandbox image kept disappearing.
+  #
+  # 92/85 gives it a band it can actually reach. The eviction floor above is
+  # untouched and is what protects the node -- 20Gi of imagefs, absolute, not a
+  # percentage -- so this trades pointless churn for headroom, not safety.
+  - "image-gc-high-threshold=92"
+  - "image-gc-low-threshold=85"
+  - "eviction-soft=memory.available<8Gi,nodefs.available<40Gi,imagefs.available<40Gi"
+  - "eviction-soft-grace-period=memory.available=1m30s,nodefs.available=2m,imagefs.available=2m"
+  - "eviction-max-pod-grace-period=60"
+  - "eviction-pressure-transition-period=2m"
+  - "system-reserved=cpu=2000m,memory=16Gi"
+  - "kube-reserved=cpu=1000m,memory=4Gi"
+
+# Peer with spark over the cable, not the LAN. spark advertises 192.168.77.2
+# (see its config.yaml for the measurement); this is the other end of that
+# point-to-point link, eno1. Without node-ip here the agent still registers its
+# wifi address and the flannel VXLAN mesh keeps crossing wifi in one direction,
+# which is the half-migrated state that is worse than either end alone.
+node-ip: 10.0.0.21
+
+# flannel does not follow node-ip. Given no interface it binds the one carrying
+# the DEFAULT ROUTE, which here is wifi (default via 10.0.0.1 dev wlp195s0):
+# the cable is point-to-point and carries no default route, so flannel kept
+# advertising 10.0.0.144 and the VXLAN mesh crossed wifi even with the
+# apiserver session on the cable. Name the interface to move the data plane.
+flannel-iface: eno1
+
+# Disk thresholds are absolute, not percentages. This root filesystem is 964G,
+# so the stock 10%/15% asked for 96G/144G free. The box sits at ~143G free and
+# so reported DiskPressure=True with a seventh of the disk still empty, which
+# taints the node and blocks scheduling. Percent is the wrong unit on a disk
+# this size: what protects the node is a fixed reserve for image pulls and
+# logs, not a fraction of capacity. imagefs shares this filesystem, so it
+# takes the same numbers.

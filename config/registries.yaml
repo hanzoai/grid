@@ -1,0 +1,27 @@
+# Registry mirrors for this node.
+#
+# oci.hanzo.ai is hanzo/registry: S3-backed, IAM-gated, reached through
+# hanzo/ingress. It is the only store that name means, on a node and off it, so
+# containerd is pointed straight at it and nothing is asked first.
+#
+# skip_verify is load-bearing and belongs here rather than in a generated file.
+# On a node the name resolves to the ingress ClusterIP through /etc/hosts, and
+# the ingress answers with Traefik's own CN=hanzo.local: no ClusterIssuer mints
+# a real one (Cloudflare terminates TLS for everyone outside). Without this key
+# k3s regenerates certs.d/oci.hanzo.ai/hosts.toml without it at the next
+# restart, and every pull of the fleet registry fails on the certificate.
+#
+# 10.0.0.19:5000 names itself, which is what lets a node spell the host at all.
+mirrors:
+  "10.0.0.19:5000":
+    endpoint:
+      - "http://10.0.0.19:5000"
+configs:
+  "oci.hanzo.ai":
+    tls:
+      insecure_skip_verify: true
+# No `auth:` block. Registry identity reaches a pull through the pod's
+# imagePullSecret, which the operator projects from KMS (hanzo/oci-hanzo-ai,
+# path /registry-credentials). Every pod pulling oci.hanzo.ai carries it. A
+# second copy of that identity on the node, in a file, is a credential in git
+# and a second place to rotate.

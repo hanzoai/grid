@@ -1,0 +1,39 @@
+[Unit]
+# grid — what a machine runs to be part of the cluster. This one is the server.
+#
+# The binary is upstream k3s, unforked. Every path it defaults to under
+# /etc/rancher and /var/lib/rancher is a flag with an env var, so the estate's
+# own names cost two lines here instead of a fork to rebase forever.
+#
+# The data directory is NOT moved yet, deliberately. Every running container's
+# bind mounts point into it, so renaming it while they run breaks them — that one
+# pairs with the partition work, which needs the node drained anyway.
+Description=Hanzo Grid (Kubernetes server)
+Documentation=https://hanzo.ai
+Wants=network-online.target
+After=network-online.target
+
+[Install]
+WantedBy=multi-user.target
+
+[Service]
+Type=notify
+EnvironmentFile=-/etc/hanzo/grid/env
+KillMode=process
+Delegate=yes
+User=root
+LimitNOFILE=1048576
+LimitNPROC=infinity
+LimitCORE=infinity
+TasksMax=infinity
+TimeoutStartSec=0
+Restart=always
+RestartSec=5s
+ExecStartPre=-/sbin/modprobe br_netfilter
+ExecStartPre=-/sbin/modprobe overlay
+ExecStart=/usr/local/bin/k3s server \
+    --config /etc/hanzo/grid/config.yaml \
+    --private-registry /etc/hanzo/grid/registries.yaml \
+    --disable=traefik \
+    --write-kubeconfig-mode 0644 \
+    --node-name spark

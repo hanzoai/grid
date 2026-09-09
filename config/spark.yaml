@@ -1,0 +1,47 @@
+# Disk is 3.7T, so percentages are the wrong unit here: stock 10%/15% stranded
+# ~550G, and the 5% that replaced them still means 186G. The box drifted to
+# 4.97% free and tripped eviction-hard, which taints the node
+# node.kubernetes.io/disk-pressure:NoSchedule -- the control plane then accepts
+# no new pods at all, which is how the registry deployment accumulated a screen
+# of dead replicas. State the reserve in bytes: what protects a node is a fixed
+# floor for image pulls and logs, not a fraction of capacity.
+#
+# NOTE: 3.3T is genuinely in use here. These thresholds stop a miscalibrated
+# signal from tainting the node; they do not create space. The consumption
+# itself still wants a look.
+kubelet-arg:
+  - "max-pods=250"
+  - "eviction-hard=memory.available<100Mi,nodefs.available<20Gi,nodefs.inodesFree<5%,imagefs.available<20Gi"
+  - "eviction-soft=nodefs.available<40Gi,imagefs.available<40Gi"
+  - "eviction-soft-grace-period=nodefs.available=2m,imagefs.available=2m"
+  - "eviction-max-pod-grace-period=60"
+
+# CROSS-NODE TRAFFIC RIDES THE DIRECT LINK, NOT THE LAN.
+# evo and spark are cabled point-to-point on 192.168.77.0/24 (spark enP7s7 .2,
+# evo eno1 .1). Measured side by side against this same apiserver: 0.158ms over
+# the cable vs 2.957ms over wifi -- ~19x -- and the cable is dedicated rather
+# than shared with every other device in the building.
+#
+# k3s auto-detected the wifi address and advertised it, so every agent learned
+# 10.0.0.242 and BOTH the apiserver session and the flannel VXLAN mesh crossed
+# wifi. Setting K3S_URL on the agent alone does NOT move it: the agent's client
+# load-balancer takes its server list from what the server advertises here, so
+# the fix has to be on this side.
+#
+# tls-san keeps the LAN address valid on the cert. The apiserver still binds
+# 0.0.0.0, so anything reaching the cluster on 10.0.0.242 keeps working -- only
+# node-to-node addressing moves.
+node-ip: 10.0.0.19
+advertise-address: 10.0.0.19
+
+# flannel does not follow node-ip: with no interface named it binds the one
+# carrying the default route, which is wifi. That left this node advertising
+# 10.0.0.242 as its VXLAN endpoint while the apiserver session already rode
+# the cable, so pod-to-pod traffic still crossed wifi. Name the cable NIC.
+flannel-iface: enP7s7
+tls-san:
+  - 192.168.77.2
+  - 10.0.0.19
+  - 10.0.0.242
+  - spark
+  - spark.local
