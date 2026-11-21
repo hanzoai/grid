@@ -1,5 +1,7 @@
 # grid
 
+[![Open in Hanzo](https://hanzo.app/badges/open-in-hanzo.svg)](https://hanzo.app/dev/open?repo=github.com/hanzoai/grid&ref=main&action=open) [![Edit with Hanzo](https://hanzo.app/badges/edit-with-hanzo.svg)](https://hanzo.app/dev/open?repo=github.com/hanzoai/grid&ref=main&action=edit)
+
 What a machine runs to be part of the cluster.
 
 `grid` is Hanzo's Kubernetes substrate: one static binary, one config file, one
